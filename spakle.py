@@ -27,6 +27,11 @@ class Spakle(BaseHTTPRequestHandler):
         with open(filename, 'wb') as f:
             f.write(data)
 
+    def get_post_data(self):
+        content_length = int(self.headers['Content-Length'])
+        data = self.rfile.read(content_length)
+        return data
+
     def decode_payload(self, data):
         """
         data from gitlab is a x-www-form-urlencoded string
@@ -56,21 +61,11 @@ class Spakle(BaseHTTPRequestHandler):
         #print("outgoing:", data)
         return data
 
-    def send_to_slack(self, url, data):
-
-        headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-        netloc = urllib.parse.urlparse(url).netloc
-
-        try:
-            client = HTTPSConnection(netloc)
-            client.request("POST", url, data, headers)
-            resp = client.getresponse()
-            print("response from slack:", resp.status, resp.reason)
-        except Exception as e:
-            print(e)
-
     def forward_to_slack(self, original, payload):
         slack_hook, channel_name = payload.pop('channel', '').split('#', 1)
+
+        if not slack_hook:
+            return
 
         if channel_name:
             channel_name = channel_name.lstrip('#') # just in case
@@ -78,22 +73,49 @@ class Spakle(BaseHTTPRequestHandler):
 
         #print("parse channel:", slack_hook, channel_name)
 
-        if slack_hook:
+        try:
+            # data is same as original incoming payload with channel field updated
             data = self.encode_payload(payload)
-            self.send_to_slack(slack_hook, data)
+
+            headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
+            netloc = urllib.parse.urlparse(slack_hook).netloc
+
+            client = HTTPSConnection(netloc)
+            client.request("POST", slack_hook, data, headers)
+            resp = client.getresponse()
+
+            print("response from slack:", resp.status, resp.reason)
+
+            return resp
+        except Exception as e:
+            print(e)
+            return None
+
+    def respond_to_gitlab(self, resp):
+        """
+        forward slack response back to gitlab
+        """
+        if resp is None:
+            self.send_response(500)
+            self.end_headers()
+            return
+
+        self.send_response(resp.status)
+        self.end_headers()
+
+        self.wfile.write( resp.read() )
 
     def do_POST(self):
-
-        self.send_response(200) # make gitlab happy
-        self.wfile.write(b'forwarded\n')
-
-        content_length = int(self.headers['Content-Length'])
-        data = self.rfile.read(content_length)
-
+        """
+        entry point from gitlab webhook
+        """
+        data = self.get_post_data()
         #self.save_to_file(data, 'push.raw')
 
         payload = self.decode_payload(data)
-        self.forward_to_slack(data, payload)
+        resp = self.forward_to_slack(data, payload)
+
+        self.respond_to_gitlab(resp)
 
 
 def main(host, port):

@@ -61,7 +61,7 @@ class Spakle(BaseHTTPRequestHandler):
         #print("outgoing:", data)
         return data
 
-    def forward_to_slack(self, original, payload):
+    def forward_to_slack(self, payload):
         slack_hook, channel_name = payload.pop('channel', '').split('#', 1)
 
         if not slack_hook:
@@ -113,7 +113,7 @@ class Spakle(BaseHTTPRequestHandler):
         #self.save_to_file(data, 'push.raw')
 
         payload = self.decode_payload(data)
-        resp = self.forward_to_slack(data, payload)
+        resp = self.forward_to_slack(payload)
 
         self.respond_to_gitlab(resp)
 

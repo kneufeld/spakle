@@ -1,0 +1,10 @@
+[Unit]
+Description=spakle (gitlab to slack bridge)
+Documentation=https://github.com/kneufeld/spakle
+
+[Service]
+ExecStart=/opt/spakle/spakle.py 0.0.0.0 8081
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
